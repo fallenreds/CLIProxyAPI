@@ -158,6 +158,20 @@ codex:
 # When true, enable authentication for the WebSocket API (/v1/ws).
 ws-auth: true
 
+# Server-side chat persistence. When enabled, exposes stateful conversation
+# endpoints so any client can create a chat, continue it, resume its history,
+# list chats, and delete them — without resending the full message array.
+# Conversations are stored as JSON files, scoped per client API key.
+#   POST   /v1/conversations            create (optional first message)
+#   GET    /v1/conversations            list the caller's conversations
+#   GET    /v1/conversations/:id        resume (full history)
+#   POST   /v1/conversations/:id/messages   continue (append + reply)
+#   DELETE /v1/conversations/:id        delete
+conversations:
+  enabled: true
+  dir: "conversations"
+  default-max-tokens: 4096
+
 # When true, enable Gemini CLI internal endpoints (/v1internal:*).
 # Default is false for safety.
 enable-gemini-cli-endpoint: false

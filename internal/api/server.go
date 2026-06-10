@@ -28,6 +28,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/api/middleware"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/api/modules"
 	ampmodule "github.com/router-for-me/CLIProxyAPI/v7/internal/api/modules/amp"
+	conversationsmodule "github.com/router-for-me/CLIProxyAPI/v7/internal/api/modules/conversations"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/cache"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/home"
@@ -204,6 +205,9 @@ type Server struct {
 	// ampModule is the Amp routing module for model mapping hot-reload
 	ampModule *ampmodule.AmpModule
 
+	// conversationsModule provides stateful chat endpoints with hot-reloadable config.
+	conversationsModule *conversationsmodule.Module
+
 	// pluginHost owns dynamic plugin Management API route dispatch.
 	pluginHost *pluginhost.Host
 
@@ -343,6 +347,12 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	}
 	if err := modules.RegisterModule(ctx, s.ampModule); err != nil {
 		log.Errorf("Failed to register Amp module: %v", err)
+	}
+
+	// Register conversations module (stateful chat/resume) using the same context.
+	s.conversationsModule = conversationsmodule.New(accessManager, AuthMiddleware(accessManager))
+	if err := modules.RegisterModule(ctx, s.conversationsModule); err != nil {
+		log.Errorf("Failed to register conversations module: %v", err)
 	}
 
 	// Apply additional router configurators from options
@@ -1604,6 +1614,16 @@ func (s *Server) UpdateClients(cfg *config.Config) {
 			}
 		} else {
 			log.Warnf("amp module is nil, skipping config update")
+		}
+	}
+
+	// Notify conversations module when its config has changed.
+	if s.conversationsModule != nil {
+		conversationsChanged := oldCfg == nil || !reflect.DeepEqual(oldCfg.Conversations, cfg.Conversations)
+		if conversationsChanged {
+			if err := s.conversationsModule.OnConfigUpdated(cfg); err != nil {
+				log.Errorf("failed to update conversations module config: %v", err)
+			}
 		}
 	}
 

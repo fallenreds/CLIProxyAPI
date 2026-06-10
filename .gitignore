@@ -10,6 +10,7 @@ config.yaml
 bin/*
 logs/*
 conv/*
+conversations/*
 temp/*
 refs/*
 plugins/*

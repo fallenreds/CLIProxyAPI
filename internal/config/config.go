@@ -23,6 +23,11 @@ const (
 	DefaultPanelGitHubRepository = "https://github.com/router-for-me/Cli-Proxy-API-Management-Center"
 	DefaultPprofAddr             = "127.0.0.1:8316"
 	DefaultAuthDir               = "~/.cli-proxy-api"
+
+	// DefaultConversationsDir is the default directory for persisted chat history.
+	DefaultConversationsDir = "conversations"
+	// DefaultConversationsMaxTokens is the fallback max_tokens for conversation turns.
+	DefaultConversationsMaxTokens = 4096
 )
 
 // Config represents the application's configuration, loaded from a YAML file.
@@ -137,6 +142,9 @@ type Config struct {
 
 	// AmpCode contains Amp CLI upstream configuration, management restrictions, and model mappings.
 	AmpCode AmpCode `yaml:"ampcode" json:"ampcode"`
+
+	// Conversations configures server-side chat persistence (stateful chat/resume).
+	Conversations ConversationsConfig `yaml:"conversations" json:"conversations"`
 
 	// OAuthExcludedModels defines per-provider global model exclusions applied to OAuth/file-backed auth entries.
 	OAuthExcludedModels map[string][]string `yaml:"oauth-excluded-models,omitempty" json:"oauth-excluded-models,omitempty"`
@@ -357,6 +365,32 @@ type AmpModelMapping struct {
 	// expression for matching model names. When true, this mapping is evaluated
 	// after exact matches and in the order provided. Defaults to false (exact match).
 	Regex bool `yaml:"regex,omitempty" json:"regex,omitempty"`
+}
+
+// ConversationsConfig configures the server-side chat persistence feature that
+// exposes stateful conversation endpoints (create/list/resume/continue/delete).
+type ConversationsConfig struct {
+	// Enabled toggles the conversations module and its routes. Defaults to true.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// Dir is the directory where conversation history is stored.
+	Dir string `yaml:"dir" json:"dir"`
+
+	// DefaultMaxTokens is the fallback max_tokens applied to a conversation turn
+	// when the request does not specify one.
+	DefaultMaxTokens int `yaml:"default-max-tokens" json:"default-max-tokens"`
+}
+
+// applyConversationDefaults normalizes the conversations section after unmarshal,
+// filling in the storage directory and default token budget when unset.
+func applyConversationDefaults(cfg *Config) {
+	cfg.Conversations.Dir = strings.TrimSpace(cfg.Conversations.Dir)
+	if cfg.Conversations.Dir == "" {
+		cfg.Conversations.Dir = DefaultConversationsDir
+	}
+	if cfg.Conversations.DefaultMaxTokens <= 0 {
+		cfg.Conversations.DefaultMaxTokens = DefaultConversationsMaxTokens
+	}
 }
 
 // AmpCode groups Amp CLI integration settings including upstream routing,
@@ -742,6 +776,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	cfg.Pprof.Addr = DefaultPprofAddr
 	cfg.AmpCode.RestrictManagementToLocalhost = false // Default to false: API key auth is sufficient
 	cfg.RemoteManagement.PanelGitHubRepository = DefaultPanelGitHubRepository
+	cfg.Conversations.Enabled = true // Default on; absent block keeps the feature enabled.
 	if err = yaml.Unmarshal(data, &cfg); err != nil {
 		if optional {
 			// In cloud deploy mode, if YAML parsing fails, return empty config instead of error.
@@ -751,6 +786,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 		}
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
+	applyConversationDefaults(&cfg)
 
 	// NOTE: Startup legacy key migration is intentionally disabled.
 	// Reason: avoid mutating config.yaml during server startup.
